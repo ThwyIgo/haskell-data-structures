@@ -3,15 +3,13 @@
 
 module Graph (Graph(..)) where
 
+import Data.Bifunctor
 import Data.Maybe
 import Data.List
-import qualified Control.Applicative as CA
-import Control.Monad.State.Strict
-import Debug.Trace
 
 -- g = graph
 -- v = vertex
--- e = edge without origin vertex (Usually a tuple of (vertex, adjList))
+-- e = edge without origin vertex (Usually a tuple of (vertex, weight))
 class Graph g v e | g -> v e where
   ----- Construction -----
 
@@ -61,32 +59,24 @@ class Graph g v e | g -> v e where
     where
       f v dict = foldr (\v1 d -> insertWith (\_ old -> old+1) v1 1 d) dict (fromJust $ adjVertices v g)
 
-  topologicalOrder :: (Show v, Eq v) => g -> Maybe [v]
-  topologicalOrder g = evalState state (map (,Unvisited) (vertices g))
+  topologicalOrder :: (Ord v,Eq v) => g -> Maybe [v]
+  -- Kahn's algorithm
+  topologicalOrder g = let (zeros, notZeros) = first (fmap fst) $
+                             partition (\(_,d) -> d == 0) (inDegrees g)
+    in helper g zeros notZeros
     where
-      firstUnvisited :: [(v, SearchStatus)] -> Maybe v
-      firstUnvisited dict = fst <$> find (\(_,ss) -> ss == Unvisited) dict
-      state = do
-        d <- get
-        case firstUnvisited d of
-          Nothing -> return $ Just []
-          Just u -> do
-            let (ml, fd) = visit u d
-            put fd
-            return $ CA.liftA2 (++) (evalState state fd) ml
-
-      -- Lista tem que ser global de algum modo
-      visit :: v -> [(v,SearchStatus)] -> (Maybe [v], [(v,SearchStatus)])
-      visit v dict =  case lookup v dict of
-        Just Visited -> (Just [], dict)
-        Just Visiting -> trace "ERRO" (Nothing, dict)
-        Just Unvisited -> let
-          updatedDict = update v Visiting dict
-          vchildren _ (Nothing, d) = (Nothing, d)
-          vchildren v1 (Just l, d) = let (ml, fd) = visit v1 d
-                                     in (fmap (++ l) ml, fd)
-          (mfl, fd) = foldr vchildren (Just [],updatedDict) (fromJust $ adjVertices v g)
-          in  ((v :) <$> mfl, update v Visited fd)
+      helper g [] degrees
+        | (not . null) degrees = Nothing
+        | otherwise = Just []
+      helper g (zeroDegreeVert : t) degrees =
+        let adjVerts = fromJust $ adjVertices zeroDegreeVert g
+            (newg, newDegrees) = foldr f (g,degrees) adjVerts
+            f v (g1, degrees1) = (removeEdge zeroDegreeVert v g
+                                 , insertWith (\_ old -> old - 1) v (-1) degrees1)
+            (zs, notZs) = first (fmap fst) $
+              partition (\(_,d) -> d == 0) newDegrees
+        in (zeroDegreeVert :) <$>
+           helper newg (t ++ zs) notZs
 
 ----- Not exported -----
 
@@ -98,5 +88,3 @@ insertWith f k new dict =
 
 update :: Eq k => k -> a -> [(k,a)] -> [(k,a)]
 update = insertWith const
-
-data SearchStatus = Unvisited | Visiting | Visited deriving Eq

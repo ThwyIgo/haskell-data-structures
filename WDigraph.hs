@@ -43,10 +43,9 @@ instance Ord v => Graph (WDigraph v w) v (v,w) where
 
 ----------
 
--- Qual o peso de uma aresta?
 edgeWeight :: Ord v
-           => v -- Origem
-           -> v -- Destino
+           => v -- Origin
+           -> v -- Destination
            -> WDigraph v w
            -> Maybe w
 edgeWeight o d g@(WDigraph hm) = adjList o g >>= lookup d
