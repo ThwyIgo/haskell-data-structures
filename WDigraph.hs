@@ -1,4 +1,4 @@
-module WDigraph (WDigraph, edgeWeight, toString, module Graph) where
+module WDigraph (WDigraph, edgeWeight, toString, Graph(..)) where
 
 import Graph
 import qualified Data.Map.Strict as Map
@@ -40,6 +40,12 @@ instance Ord v => Graph (WDigraph v w) v (v,w) where
   adjList v (WDigraph hm) = hm Map.!? v
 
   adjVertices v (WDigraph hm) = map fst <$> hm Map.!? v
+
+instance Ord v => Semigroup (WDigraph v w) where
+  (<>) = gconcat
+
+instance Ord v => Monoid (WDigraph v w) where
+  mempty = empty
 
 ----------
 

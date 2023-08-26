@@ -1,7 +1,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {- Adjacency list Graph class -}
 
-module Graph (Graph(..)) where
+module Graph (Graph(..), gconcat) where
 
 import Data.Bifunctor
 import Data.Maybe
@@ -10,7 +10,7 @@ import Data.List
 -- g = graph
 -- v = vertex
 -- e = edge without origin vertex (Usually a tuple of (vertex, weight))
-class Graph g v e | g -> v e where
+class Monoid g => Graph g v e | g -> v e where
   ----- Construction -----
 
   empty    :: g
@@ -88,3 +88,16 @@ insertWith f k new dict =
 
 update :: Eq k => k -> a -> [(k,a)] -> [(k,a)]
 update = insertWith const
+
+----- Semigroup -----
+gconcat :: Graph g v e => g -> g -> g
+gconcat a b = let bVerts = vertices b
+                  bEdges = map (\v -> (v, fromJust $ adjList v b)) bVerts
+  in flip combineVerts bVerts $
+     combineEdges a bEdges
+  where
+    combineVerts = foldr addVertex
+
+    combineEdges acc [] = acc
+    combineEdges acc ((v,es) : t) = flip combineEdges t $
+      foldr (addEdge v) acc es

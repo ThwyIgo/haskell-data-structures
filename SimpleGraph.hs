@@ -1,4 +1,4 @@
-module SimpleGraph (SGraph, module Graph) where
+module SimpleGraph (SGraph, Graph(..)) where
 
 import Graph
 
@@ -15,13 +15,11 @@ instance Ord v => Graph (SGraph v) v v where
     | otherwise = SGraph $ Map.insert v [] hm
 
   addEdge o d g@(SGraph hm) = SGraph $ Map.insertWith f d [o] $
-                              Map.insertWith f o [d] hm'
+                              Map.insertWith f o [d] hm
     where f new [] = new
-          f new@[v] (h : t)
-            | v == h = h:t
-            | otherwise = h : f new t
-
-          hm' = (\(SGraph hm) -> hm) $ addVertex d g
+          f new@[v] l
+            | v `elem` l = l
+            | otherwise = v : l
 
   removeVertex v (SGraph hm) = SGraph $
     filter (/= v) <$> Map.delete v hm
@@ -37,8 +35,14 @@ instance Ord v => Graph (SGraph v) v v where
     adjes <- adjList o g
     if d `elem` adjes
       then Just d
-      else Nothing    
-    
+      else Nothing
+
   adjList v (SGraph hm) = hm Map.!? v
 
   adjVertices = adjList
+
+instance Ord v => Semigroup (SGraph v) where
+  (<>) = gconcat
+
+instance Ord v => Monoid (SGraph v) where
+  mempty = empty
