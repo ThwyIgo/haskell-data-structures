@@ -1,4 +1,4 @@
-module WDigraph (module WDigraph, module Graph) where
+module WDigraph (WDigraph, edgeWeight, toString, module Graph) where
 
 import Graph
 import qualified Data.Map.Strict as Map
@@ -10,8 +10,8 @@ instance Ord v => Graph (WDigraph v w) v (v,w) where
   empty = WDigraph Map.empty
 
   addVertex v g@(WDigraph hm)
-    | isNothing (hm Map.!? v) = WDigraph $ Map.insert v [] hm
-    | otherwise = g
+    | Map.member v hm = g
+    | otherwise = WDigraph $ Map.insert v [] hm
 
   addEdge o (d,w) g@(WDigraph hm) = WDigraph $ Map.insertWith f o [(d,w)] hm'
     where f new [] = new
@@ -33,8 +33,8 @@ instance Ord v => Graph (WDigraph v w) v (v,w) where
 
   vertices (WDigraph hm) = Map.keys hm
 
-  edge o d (WDigraph hm) = case hm Map.!? o of
-    Just adjList -> (d,) <$> lookup d adjList
+  edge o d g = case adjList o g of
+    Just adjes -> (d,) <$> lookup d adjes
     Nothing -> Nothing
 
   adjList v (WDigraph hm) = hm Map.!? v
