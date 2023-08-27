@@ -1,4 +1,4 @@
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FunctionalDependencies, RecordWildCards #-}
 {- Adjacency list Graph class -}
 
 module Graph (Graph(..), gconcat) where
@@ -10,7 +10,7 @@ import Data.List
 -- g = graph
 -- v = vertex
 -- e = edge without origin vertex (Usually a tuple of (vertex, weight))
-class Monoid g => Graph g v e | g -> v e where
+class (Eq v, Monoid g) => Graph g v e | g -> v e where
   ----- Construction -----
 
   empty    :: g
@@ -78,26 +78,65 @@ class Monoid g => Graph g v e | g -> v e where
         in (zeroDegreeVert :) <$>
            helper newg (t ++ zs) notZs
 
------ Not exported -----
+  findBridges :: g -> [(v,v)]
+  findBridges g = let istate = BS 0 [] []
+                      vs = vertices g
+                      loop v s@BS{..} = if isNothing $ lookup v inlow
+                                        then dfs v Nothing s
+                                        else s -- Vertex already visited
+    in bridges $ foldr loop istate vs
+    where
+      dfs :: v -> Maybe v -> BridgeState v -> BridgeState v
+      dfs v parent BS{..} =
+        let inlowv = update v (counter, counter) inlow
+            newState = BS (counter + 1) inlowv bridges
+            adjvs = case parent of
+              Just p -> delete p . fromJust $ adjVertices v g
+              Nothing -> fromJust $ adjVertices v g
+        in foldr (f v) newState adjvs
 
-insertWith :: Eq k => (a -> a -> a) -> k -> a -> [(k,a)] -> [(k,a)]
-insertWith f k new dict =
-  case span (\(k1, _) -> k1 /= k) dict of
-    (pre, (_,old) : t) -> pre ++ (k, f new old) : t
-    _ -> (k, new) : dict
+      f v adjv state@BS{..}
+        | isNothing $ lookup adjv inlow  =
+            let dfsState@BS{inlow=il,bridges=bs} = dfs adjv (Just v) state
 
-update :: Eq k => k -> a -> [(k,a)] -> [(k,a)]
-update = insertWith const
+                Just (_,lowadjv) = lookup adjv il
+                Just (inv,lowv) = lookup v il
+                newInLow = update v (inv, min lowv lowadjv) il
+                updBridges = if lowadjv > inv
+                             then (v, adjv) : bs
+                             else bs
+            in dfsState { inlow = newInLow
+                        , bridges = updBridges }
+
+        | otherwise =
+            let Just (inadjv,_) = lookup adjv inlow
+                Just (inv,lowv) = lookup v inlow
+                newInlow = update v (inv, min lowv inadjv) inlow
+            in state {inlow = newInlow}
 
 ----- Semigroup -----
 gconcat :: Graph g v e => g -> g -> g
 gconcat a b = let bVerts = vertices b
                   bEdges = map (\v -> (v, fromJust $ adjList v b)) bVerts
-  in flip combineVerts bVerts $
-     combineEdges a bEdges
+  in combineEdges a bEdges
   where
-    combineVerts = foldr addVertex
-
     combineEdges acc [] = acc
     combineEdges acc ((v,es) : t) = flip combineEdges t $
-      foldr (addEdge v) acc es
+      foldr (addEdge v) (addVertex v acc) es
+
+----- Not exported -----
+
+type ListMap k a = [(k,a)]
+data BridgeState v = BS { counter :: Int
+                        , inlow   :: ListMap v (Int,Int)
+                        , bridges :: [(v,v)]
+                        }
+
+insertWith :: Eq k => (a -> a -> a) -> k -> a -> ListMap k a -> ListMap k a
+insertWith f k new dict =
+  case span (\(k1, _) -> k1 /= k) dict of
+    (pre, (_,old) : t) -> pre ++ (k, f new old) : t
+    _ -> (k, new) : dict
+
+update :: Eq k => k -> a -> ListMap k a -> ListMap k a
+update = insertWith const
