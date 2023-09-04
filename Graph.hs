@@ -1,4 +1,4 @@
-{-# LANGUAGE FunctionalDependencies, RecordWildCards #-}
+{-# LANGUAGE FunctionalDependencies, RecordWildCards, DuplicateRecordFields #-}
 {- Adjacency list Graph class -}
 
 module Graph (Graph(..), gconcat) where
@@ -20,6 +20,9 @@ class (Eq v, Monoid g) => Graph g v e | g -> v e where
   fromList l = let addVertices g = foldr (\(v,_) g -> addVertex v g) g l
     in addVertices $
        foldr (\(v,el) g -> foldr (addEdge v) g el) empty l
+
+  fromEdgeList :: [(v,e)] -> g
+  fromEdgeList = foldr (\(v,e) g -> addEdge v e g) empty
 
   ----- Modify -----
 
@@ -86,9 +89,8 @@ class (Eq v, Monoid g) => Graph g v e | g -> v e where
                                         else s -- Vertex already visited
     in bridges $ foldr loop istate vs
     where
-      dfs :: v -> Maybe v -> BridgeState v -> BridgeState v
       dfs v parent BS{..} =
-        let inlowv = update v (counter, counter) inlow
+        let inlowv   = update v (counter, counter) inlow
             newState = BS (counter + 1) inlowv bridges
             adjvs = case parent of
               Just p -> delete p . fromJust $ adjVertices v g
@@ -96,23 +98,59 @@ class (Eq v, Monoid g) => Graph g v e | g -> v e where
         in foldr (f v) newState adjvs
 
       f v adjv state@BS{..}
-        | isNothing $ lookup adjv inlow  =
+        | isNothing $ lookup adjv inlow =
             let dfsState@BS{inlow=il,bridges=bs} = dfs adjv (Just v) state
 
                 Just (_,lowadjv) = lookup adjv il
-                Just (inv,lowv) = lookup v il
-                newInLow = update v (inv, min lowv lowadjv) il
+                Just (inv,lowv)  = lookup v il
+                newInLow         = update v (inv, min lowv lowadjv) il
                 updBridges = if lowadjv > inv
                              then (v, adjv) : bs
                              else bs
-            in dfsState { inlow = newInLow
+            in dfsState { inlow   = newInLow
                         , bridges = updBridges }
 
         | otherwise =
             let Just (inadjv,_) = lookup adjv inlow
                 Just (inv,lowv) = lookup v inlow
-                newInlow = update v (inv, min lowv inadjv) inlow
-            in state {inlow = newInlow}
+                newInlow        = update v (inv, min lowv inadjv) inlow
+            in state {inlow=newInlow, bridges}
+
+  scc :: g -> [[v]]
+  -- Tarjan's algorithm
+  scc g = let loop v s@SCCS{inlow} = if isNothing $ lookup v inlow
+                                     then dfs v s
+                                     else s
+    in sccs $ foldr loop (SCCS 0 [] [] []) (vertices g)
+    where
+      dfs v SCCS{..} =
+        let newInlow = update v (counter, counter) inlow
+            state    = SCCS (counter + 1) newInlow (v : stack) sccs
+            r@SCCS{inlow=ril, stack=rs, sccs=rsccs} =
+              foldr (f v) state (fromJust $ adjVertices v g)
+            Just (inv, lowv) = lookup v ril
+
+        in if inv == lowv -- v is the beginning of a component
+        -- Remove from the stack the vertices that are part of the component
+           then let (component, fs) = splitAt ((+1) . fromJust $ elemIndex v rs) rs
+                in r {stack=fs, sccs=component : rsccs}
+           else r
+
+      f v adjv state@SCCS{..}
+        | isNothing $ lookup adjv inlow = -- adjv unvisited
+            let r@SCCS{..}       = dfs adjv state
+                Just (_,lowadjv) = lookup adjv inlow
+                Just (inv,lowv)  = lookup v inlow
+                newInlow         = update v (inv, min lowv lowadjv) inlow
+            in r {inlow=newInlow, sccs}
+
+        | adjv `elem` stack = -- adjv belongs to current component
+            let Just (inv, lowv) = lookup v inlow
+                Just (inadjv,_)  = lookup adjv inlow
+                newInlow         = update v (inv, min lowv inadjv) inlow
+            in state {inlow=newInlow, sccs}
+
+        | otherwise = state -- adjv belongs to another component
 
 ----- Semigroup -----
 gconcat :: Graph g v e => g -> g -> g
@@ -131,6 +169,11 @@ data BridgeState v = BS { counter :: Int
                         , inlow   :: ListMap v (Int,Int)
                         , bridges :: [(v,v)]
                         }
+data SCCState v = SCCS { counter :: Int
+                       , inlow :: ListMap v (Int,Int)
+                       , stack :: [v]
+                       , sccs :: [[v]]
+                       }
 
 insertWith :: Eq k => (a -> a -> a) -> k -> a -> ListMap k a -> ListMap k a
 insertWith f k new dict =
